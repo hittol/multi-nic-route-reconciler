@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: multi-nic-routing
+  namespace: kube-system
+  labels:
+    app: multi-nic-routing
+spec:
+  selector:
+    matchLabels:
+      app: multi-nic-routing
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: multi-nic-routing
+    spec:
+      # 노드의 라우팅 테이블을 직접 다루기 위해 호스트 네트워크 네임스페이스를 사용한다.
+      hostNetwork: true
+      priorityClassName: system-node-critical
+      # Kubernetes API를 호출하지 않으므로 토큰을 마운트하지 않는다.
+      automountServiceAccountToken: false
+      # Secondary NIC이 붙은 노드에만 배포한다.
+      nodeSelector:
+        network-type: multinic
+      tolerations:
+        - operator: Exists
+      volumes:
+        - name: config
+          configMap:
+            name: multi-nic-routing-config
+        - name: state
+          emptyDir:
+            medium: Memory
+      containers:
+        - name: route-reconciler
+          image: <registry>.azurecr.io/multi-nic-route-reconciler:1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/reconcile.sh"]
+          env:
+            - name: CONF_DIR
+              value: /etc/multi-nic-routing
+            - name: STATE_DIR
+              value: /run/multi-nic-routing
+            - name: ROUTE_PROTO
+              value: "210"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/multi-nic-routing
+              readOnly: true
+            - name: state
+              mountPath: /run/multi-nic-routing
+          securityContext:
+            # ip route 변경에는 root와 NET_ADMIN이 필요하다. 그 외 권한은 모두 제거한다.
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_ADMIN"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+          # 모든 라우트가 적용·검증된 노드에서만 Ready가 된다.
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -f /run/multi-nic-routing/ready"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3

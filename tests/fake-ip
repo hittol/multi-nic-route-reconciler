@@ -1,0 +1,39 @@
+#!/bin/sh
+# 테스트용 ip 명령 스텁.
+# 실제 커널 대신 $FAKE_IP_TABLE 파일을 라우팅 테이블로 사용한다.
+# 존재하는 인터페이스는 $FAKE_IP_IFACES(공백 구분)로 지정한다.
+
+TB="${FAKE_IP_TABLE:?FAKE_IP_TABLE is required}"
+IFACES="${FAKE_IP_IFACES:-eth1 eth2}"
+
+has_iface() {
+  for i in $IFACES; do
+    [ "$i" = "$1" ] && return 0
+  done
+  return 1
+}
+
+remove_dst() {
+  grep -v "^$1 " "$TB" > "$TB.tmp" || true
+  mv "$TB.tmp" "$TB"
+}
+
+case "$*" in
+  "link show dev "*)
+    has_iface "$4" ;;
+  "-o link show dev "*)
+    has_iface "$5" && echo "3: $5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500" ;;
+  "-4 route show table main exact "*)
+    grep "^$7 " "$TB" || true ;;
+  "-4 route show table main proto "*)
+    grep " proto $7\$" "$TB" || true ;;
+  "-4 route replace "*)
+    # -4 route replace DST via GW dev IFACE proto P
+    remove_dst "$4"
+    echo "$4 via $6 dev $8 proto ${10}" >> "$TB" ;;
+  "-4 route del "*)
+    remove_dst "$4" ;;
+  *)
+    echo "fake-ip: unsupported: $*" >&2
+    exit 2 ;;
+esac

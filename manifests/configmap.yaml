@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-nic-routing-config
+  namespace: kube-system
+data:
+  # 형식: <Destination CIDR> <Interface> <Gateway>
+  # 공백으로 구분하며 한 줄에 하나의 라우트를 지정한다. '#'으로 시작하는 줄은 무시한다.
+  # 값을 수정하면 kubelet이 볼륨을 갱신한 뒤 다음 주기에 Pod 재시작 없이 반영된다.
+  routes.conf: |
+    # DB 대역은 eth1(Secondary NIC)로
+    10.10.1.0/24 eth1 10.20.1.1
+    # 파일 전송 대역은 eth2로
+    10.10.2.0/24 eth2 10.20.2.1
+    # 백업 대역은 eth3으로
+    10.10.3.0/24 eth3 10.20.3.1
+
+  # 상태 확인 주기(초). 5~3600 범위를 벗어나거나 숫자가 아니면 30초를 사용한다.
+  RECONCILE_INTERVAL: "30"
